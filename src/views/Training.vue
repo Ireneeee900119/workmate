@@ -103,7 +103,7 @@
         <p class="desc">{{ c.description }}</p>
 
         <div class="meta">
-          <span>⏱️ {{ c.durationMin }} 分</span>
+          <span>⏱️ {{ training.getCourseDurationMin(c) }} 分</span>
           <span>🏷️ {{ c.category }}</span>
           <span class="tags">
             <small v-for="t in c.tags" :key="t">#{{ t }}</small>
@@ -145,8 +145,11 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import training from '../router/training'
+
+const router = useRouter()
 
 const q = ref('')
 const filterRequired = ref('all') // all | required | optional
@@ -216,6 +219,26 @@ const paged = computed(() => {
 })
 
 watch([q, filterRequired, activeCat, sortBy], () => { page.value = 1 })
+
+// 初始化
+onMounted(async () => {
+  // 檢查登入狀態並載入進度
+  const isLoggedIn = await training.checkAuthStatus()
+  if (isLoggedIn) {
+    await training.loadProgress()
+  } else {
+    // 如果未登入，重導向到登入頁面
+    router.push('/login')
+  }
+  
+  // 載入所有課程的實際影片時間長度
+  try {
+    await training.loadAllVideosDuration()
+    console.log('所有課程影片時間長度載入完成')
+  } catch (error) {
+    console.warn('載入影片時間長度時發生錯誤:', error)
+  }
+})
 </script>
 
 <style scoped>

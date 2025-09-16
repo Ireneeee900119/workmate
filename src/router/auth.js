@@ -59,9 +59,21 @@ async function fetchMe() {
 }
 
 async function logout() {
-	await api('/auth/logout', { method: 'POST' })
-	state.user = null
-	localStorage.removeItem(LS_KEY)
+	try {
+		await api('/auth/logout', { method: 'POST' })
+		state.user = null
+		localStorage.removeItem(LS_KEY)
+		
+		// 登出後刷新頁面，確保清除所有狀態
+		console.log('登出成功，即將刷新頁面...')
+		window.location.reload()
+	} catch (error) {
+		console.error('登出時發生錯誤:', error)
+		// 即使 API 呼叫失敗，也要清除本地狀態並刷新頁面
+		state.user = null
+		localStorage.removeItem(LS_KEY)
+		window.location.reload()
+	}
 }
 
 const isAuthed = computed(() => !!state.user)

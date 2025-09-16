@@ -67,8 +67,9 @@ onMounted(() => document.addEventListener('click', onClickOutside))
 onBeforeUnmount(() => document.removeEventListener('click', onClickOutside))
 
 async function logout() {
-  await auth.logout()
   showDropdown.value = false
+  // auth.logout() 會自動刷新頁面，所以不需要額外處理
+  await auth.logout()
 }
 </script>
 

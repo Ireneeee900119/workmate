@@ -89,19 +89,24 @@ router.post('/logout', (req, res) => {
 
 router.get('/me', async (req, res) => {
 	try {
+		console.log('檢查 /auth/me 請求...')
 		const token = req.cookies?.token
+		console.log('Token 存在:', !!token)
 		if (!token) return res.status(401).json({ error: '未登入' })
 		let payload
 		try {
 			payload = jwt.verify(token, JWT_SECRET)
-		} catch {
+			console.log('Token 驗證成功，payload:', payload)
+		} catch (err) {
+			console.log('Token 驗證失敗:', err.message)
 			return res.status(401).json({ error: '登入逾期' })
 		}
 		const user = await findUserById(payload.uid)
+		console.log('使用者查詢結果:', !!user)
 		if (!user) return res.status(401).json({ error: '無此使用者' })
 		res.json({ user })
 	} catch (err) {
-		console.error(err)
+		console.error('伺服器錯誤:', err)
 		res.status(500).json({ error: '伺服器錯誤' })
 	}
 })

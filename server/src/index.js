@@ -69,6 +69,33 @@ async function initTables() {
 		const fallbackSql = baseCreate + ', INDEX idx_posts_author_id (author_id)) ' + engineClause
 		await db.query(fallbackSql)
 	}
+
+	// course_progress 表（課程進度）
+	const progressCreate = `CREATE TABLE IF NOT EXISTS course_progress (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		user_id ${authorColumnType} NOT NULL,
+		course_id INT NOT NULL,
+		watched_time DECIMAL(10,2) DEFAULT 0,
+		video_duration DECIMAL(10,2) DEFAULT 0,
+		progress_percentage INT DEFAULT 0,
+		is_completed BOOLEAN DEFAULT FALSE,
+		last_watched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE KEY unique_user_course (user_id, course_id)`
+
+	const progressFkOrIndex = useForeignKey
+		? ', FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE'
+		: ', INDEX idx_progress_user_id (user_id)'
+
+	const progressSql = progressCreate + progressFkOrIndex + `) ${engineClause}`
+
+	try {
+		await db.query(progressSql)
+	} catch (err) {
+		console.warn('建立 course_progress（含外鍵）失敗，改用無外鍵版本：', err?.code || err)
+		const fallbackProgressSql = progressCreate + ', INDEX idx_progress_user_id (user_id)) ' + engineClause
+		await db.query(fallbackProgressSql)
+	}
 }
 
 // middlewares
@@ -90,12 +117,16 @@ app.use('/api/auth', authRouter)
 // posts routes
 import postsRouter from './routes/posts.js'
 
+// progress routes
+import progressRouter from './routes/progress.js'
+
 await initTables().catch(err => {
 	console.error('資料表初始化失敗', err)
 	process.exit(1)
 })
 
 app.use('/api/posts', postsRouter)
+app.use('/api/progress', progressRouter)
 
 app.listen(PORT, () => {
 	console.log(`[server] listening on http://localhost:${PORT}`)
