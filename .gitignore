@@ -11,10 +11,16 @@ node_modules
 dist
 dist-ssr
 *.local
-#
-public/videos
+# Videos and media files
+public/videos/
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+
 .env
-.mp4
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
