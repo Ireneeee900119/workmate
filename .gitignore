@@ -12,13 +12,6 @@ dist
 dist-ssr
 *.local
 # Videos and media files
-public/videos/
-*.mp4
-*.avi
-*.mov
-*.wmv
-*.flv
-*.webm
 
 .env
 # Editor directories and files
