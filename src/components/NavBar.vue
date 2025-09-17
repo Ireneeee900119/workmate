@@ -18,9 +18,9 @@
 
     <div class="right">
       <!-- 未登入 -->
-      <button v-if="!auth.isAuthed.value" class="btn" @click="mockLogin">
+      <router-link v-if="!auth.isAuthed.value" to="/login" class="btn">
         登入
-      </button>
+      </router-link>
 
       <!-- 已登入 -->
       <div v-else class="user" @click="toggleDropdown" @keydown.enter="toggleDropdown" tabindex="0">
@@ -66,20 +66,10 @@ function onClickOutside(e) {
 onMounted(() => document.addEventListener('click', onClickOutside))
 onBeforeUnmount(() => document.removeEventListener('click', onClickOutside))
 
-function logout() {
-  auth.logout()
+async function logout() {
   showDropdown.value = false
-}
-
-function mockLogin() {
-  // 這裡改成你實際登入流程；現在是示範帳號
-  auth.login({
-    id: 'u_1001',
-    name: 'Ivy Chen',
-    email: 'ivy.chen@example.com',
-    role: 'Product Engineer',
-    dept: 'R&D'
-  })
+  // auth.logout() 會自動刷新頁面，所以不需要額外處理
+  await auth.logout()
 }
 </script>
 

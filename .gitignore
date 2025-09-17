@@ -19,6 +19,14 @@ lerna-debug.log*
 .env.*
 /backend/.env
 
+node_modules
+dist
+dist-ssr
+*.local
+# Videos and media files
+
+.env
+# Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 
