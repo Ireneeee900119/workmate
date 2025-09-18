@@ -75,6 +75,41 @@ INSERT INTO `posts` (`id`, `author_id`, `content`, `image_url`, `created_at`, `u
 -- --------------------------------------------------------
 
 --
+-- 資料表結構 `wellbeing_assessments`
+--
+
+CREATE TABLE `wellbeing_assessments` (
+  `id` int(11) NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `q1_score` tinyint(1) NOT NULL DEFAULT 0 COMMENT '緊張或焦慮的頻率 (0-3)',
+  `q2_score` tinyint(1) NOT NULL DEFAULT 0 COMMENT '無法停止或控制擔心的頻率 (0-3)',
+  `q3_score` tinyint(1) NOT NULL DEFAULT 0 COMMENT '對做事缺乏興趣或樂趣的頻率 (0-3)',
+  `q4_score` tinyint(1) NOT NULL DEFAULT 0 COMMENT '感到沮喪、憂鬱或絕望的頻率 (0-3)',
+  `total_score` tinyint(2) NOT NULL DEFAULT 0 COMMENT '總分 (0-12)',
+  `level` enum('low','mild','moderate','high') NOT NULL COMMENT '壓力等級',
+  `share_with_hr` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否同意通知HR',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- 資料表結構 `mood_checkins`
+--
+
+CREATE TABLE `mood_checkins` (
+  `id` int(11) NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `mood_value` tinyint(1) NOT NULL COMMENT '心情值 (0=bad, 1=ok, 2=good)',
+  `mood_date` date NOT NULL COMMENT '心情記錄日期',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- 資料表結構 `users`
 --
 
@@ -119,6 +154,21 @@ ALTER TABLE `posts`
   ADD KEY `author_id` (`author_id`);
 
 --
+-- 資料表索引 `wellbeing_assessments`
+--
+ALTER TABLE `wellbeing_assessments`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `user_id` (`user_id`);
+
+--
+-- 資料表索引 `mood_checkins`
+--
+ALTER TABLE `mood_checkins`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_user_date` (`user_id`,`mood_date`),
+  ADD KEY `user_id` (`user_id`);
+
+--
 -- 資料表索引 `users`
 --
 ALTER TABLE `users`
@@ -142,6 +192,18 @@ ALTER TABLE `posts`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
+-- 使用資料表自動遞增(AUTO_INCREMENT) `wellbeing_assessments`
+--
+ALTER TABLE `wellbeing_assessments`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用資料表自動遞增(AUTO_INCREMENT) `mood_checkins`
+--
+ALTER TABLE `mood_checkins`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
 -- 使用資料表自動遞增(AUTO_INCREMENT) `users`
 --
 ALTER TABLE `users`
@@ -162,6 +224,18 @@ ALTER TABLE `course_progress`
 --
 ALTER TABLE `posts`
   ADD CONSTRAINT `posts_ibfk_1` FOREIGN KEY (`author_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- 資料表的限制式 `wellbeing_assessments`
+--
+ALTER TABLE `wellbeing_assessments`
+  ADD CONSTRAINT `wellbeing_assessments_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- 資料表的限制式 `mood_checkins`
+--
+ALTER TABLE `mood_checkins`
+  ADD CONSTRAINT `mood_checkins_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

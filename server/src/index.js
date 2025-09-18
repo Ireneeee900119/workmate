@@ -96,6 +96,58 @@ async function initTables() {
 		const fallbackProgressSql = progressCreate + ', INDEX idx_progress_user_id (user_id)) ' + engineClause
 		await db.query(fallbackProgressSql)
 	}
+
+	// wellbeing_assessments 表（心理自評）
+	const assessmentCreate = `CREATE TABLE IF NOT EXISTS wellbeing_assessments (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		user_id ${authorColumnType} NOT NULL,
+		q1_score TINYINT NOT NULL DEFAULT 0 COMMENT '緊張或焦慮的頻率 (0-3)',
+		q2_score TINYINT NOT NULL DEFAULT 0 COMMENT '無法停止或控制擔心的頻率 (0-3)',
+		q3_score TINYINT NOT NULL DEFAULT 0 COMMENT '對做事缺乏興趣或樂趣的頻率 (0-3)',
+		q4_score TINYINT NOT NULL DEFAULT 0 COMMENT '感到沮喪、憂鬱或絕望的頻率 (0-3)',
+		total_score TINYINT NOT NULL DEFAULT 0 COMMENT '總分 (0-12)',
+		level ENUM('low','mild','moderate','high') NOT NULL COMMENT '壓力等級',
+		share_with_hr BOOLEAN NOT NULL DEFAULT FALSE COMMENT '是否同意通知HR',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`
+
+	const assessmentFkOrIndex = useForeignKey
+		? ', FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE'
+		: ', INDEX idx_assessment_user_id (user_id)'
+
+	const assessmentSql = assessmentCreate + assessmentFkOrIndex + `) ${engineClause}`
+
+	try {
+		await db.query(assessmentSql)
+	} catch (err) {
+		console.warn('建立 wellbeing_assessments（含外鍵）失敗，改用無外鍵版本：', err?.code || err)
+		const fallbackAssessmentSql = assessmentCreate + ', INDEX idx_assessment_user_id (user_id)) ' + engineClause
+		await db.query(fallbackAssessmentSql)
+	}
+
+	// mood_checkins 表（每日心情打卡）
+	const moodCreate = `CREATE TABLE IF NOT EXISTS mood_checkins (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		user_id ${authorColumnType} NOT NULL,
+		mood_value TINYINT NOT NULL COMMENT '心情值 (0=bad, 1=ok, 2=good)',
+		mood_date DATE NOT NULL COMMENT '心情記錄日期',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		UNIQUE KEY unique_user_date (user_id, mood_date)`
+
+	const moodFkOrIndex = useForeignKey
+		? ', FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE'
+		: ', INDEX idx_mood_user_id (user_id)'
+
+	const moodSql = moodCreate + moodFkOrIndex + `) ${engineClause}`
+
+	try {
+		await db.query(moodSql)
+	} catch (err) {
+		console.warn('建立 mood_checkins（含外鍵）失敗，改用無外鍵版本：', err?.code || err)
+		const fallbackMoodSql = moodCreate + ', INDEX idx_mood_user_id (user_id)) ' + engineClause
+		await db.query(fallbackMoodSql)
+	}
 }
 
 // middlewares
@@ -120,6 +172,9 @@ import postsRouter from './routes/posts.js'
 // progress routes
 import progressRouter from './routes/progress.js'
 
+// wellbeing routes
+import wellbeingRouter from './routes/wellbeing.js'
+
 await initTables().catch(err => {
 	console.error('資料表初始化失敗', err)
 	process.exit(1)
@@ -127,6 +182,7 @@ await initTables().catch(err => {
 
 app.use('/api/posts', postsRouter)
 app.use('/api/progress', progressRouter)
+app.use('/api/wellbeing', wellbeingRouter)
 
 app.listen(PORT, () => {
 	console.log(`[server] listening on http://localhost:${PORT}`)

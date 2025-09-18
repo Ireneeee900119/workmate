@@ -11,8 +11,14 @@
         <router-link to="/">首頁</router-link>
         <router-link to="/training">職涯訓練</router-link>
         <router-link to="/wellbeing">心理健康</router-link>
+        <router-link to="/tour">導覽地圖</router-link>
         <router-link to="/community">社群</router-link>
-        <router-link to="/notifications">通知</router-link>
+        <router-link to="/notifications" class="notification-link">
+          通知
+          <span v-if="notificationStore.unreadCount.value > 0" class="notification-badge">
+            {{ notificationStore.unreadCount.value }}
+          </span>
+        </router-link>
       </nav>
     </div>
 
@@ -37,7 +43,12 @@
         <!-- 下拉選單 -->
         <div class="dropdown" v-if="showDropdown" @click.stop>
           <router-link to="/" class="item">個人資料</router-link>
-          <router-link to="/notifications" class="item">通知</router-link>
+          <router-link to="/notifications" class="item notification-dropdown-link">
+            通知
+            <span v-if="notificationStore.unreadCount.value > 0" class="notification-badge-small">
+              {{ notificationStore.unreadCount.value }}
+            </span>
+          </router-link>
           <div class="sep"></div>
           <button class="item danger" @click="logout">登出</button>
         </div>
@@ -54,6 +65,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import auth from '../router/auth'
+import notificationStore from '../stores/notifications'
 
 const showDropdown = ref(false)
 const openMenu = ref(false)
@@ -63,7 +75,11 @@ function onClickOutside(e) {
   const nav = document.querySelector('.navbar')
   if (nav && !nav.contains(e.target)) showDropdown.value = false
 }
-onMounted(() => document.addEventListener('click', onClickOutside))
+onMounted(() => {
+  document.addEventListener('click', onClickOutside)
+  // 初始化通知系統
+  notificationStore.initialize()
+})
 onBeforeUnmount(() => document.removeEventListener('click', onClickOutside))
 
 async function logout() {
@@ -95,6 +111,53 @@ async function logout() {
   color: var(--text); text-decoration: none; padding: 6px 8px; border-radius: 6px;
 }
 .nav-links a.router-link-active { background: #f0f2f5; }
+
+.notification-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.notification-badge {
+  background: #ef4444;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  animation: pulse 2s infinite;
+}
+
+.notification-dropdown-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.notification-badge-small {
+  background: #ef4444;
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
 
 .right { display: flex; align-items: center; gap: 10px; }
 

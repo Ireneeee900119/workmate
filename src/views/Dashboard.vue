@@ -17,8 +17,10 @@
       <!-- 心理健康 -->
       <section class="card">
         <h2>💙 心理健康關懷</h2>
-        <p>本週尚未完成心理健康 Check-in</p>
-        <button @click="goWellbeing">立即自評</button>
+        <p v-if="!wellbeingCompleted">本週尚未完成心理健康 Check-in</p>
+        <p v-else class="completed-status">✅ 您已完成本週心理健康自評</p>
+        <button v-if="!wellbeingCompleted" @click="goWellbeing">立即自評</button>
+        <button v-else @click="goWellbeing" class="view-btn">查看詳情</button>
       </section>
 
       <!-- 通知預覽 -->
@@ -48,11 +50,12 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const trainingProgress = ref(65)
+const wellbeingCompleted = ref(false)
 
 const notifications = ref([
   { id: 1, title: '新人導向課程已完成 80%', time: '2 小時前' },
@@ -64,9 +67,70 @@ const posts = ref([
   { id: 2, user: 'Ben', content: '溝通技巧課程好實用！' },
 ])
 
+// API 呼叫函數
+async function apiCall(url, options = {}) {
+  const response = await fetch(`http://localhost:5174/api${url}`, {
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    },
+    ...options
+  })
+  
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.error || '請求失敗')
+  }
+  
+  return response.json()
+}
+
+// 檢查心理健康完成狀態
+async function checkWellbeingStatus() {
+  try {
+    const response = await apiCall('/wellbeing/assessment/latest')
+    if (response.data) {
+      const lastDate = new Date(response.data.created_at)
+      const now = new Date()
+      const diffDays = (now - lastDate) / (1000 * 60 * 60 * 24)
+      wellbeingCompleted.value = diffDays < 7
+    } else {
+      wellbeingCompleted.value = false
+    }
+  } catch (error) {
+    console.error('檢查心理健康狀態失敗:', error)
+    wellbeingCompleted.value = false
+  }
+}
+
 function goWellbeing() {
   router.push('/wellbeing')
 }
+
+// 檢查登入狀態
+async function checkAuthStatus() {
+  try {
+    const response = await fetch('http://localhost:5174/api/auth/me', {
+      credentials: 'include'
+    })
+    if (!response.ok) {
+      return false
+    }
+    return true
+  } catch (error) {
+    console.error('檢查登入狀態失敗:', error)
+    return false
+  }
+}
+
+// 初始化
+onMounted(async () => {
+  const isLoggedIn = await checkAuthStatus()
+  if (isLoggedIn) {
+    await checkWellbeingStatus()
+  }
+})
 </script>
 
 <style scoped>
@@ -124,5 +188,38 @@ function goWellbeing() {
   font-size: 12px;
   color: #666;
   margin-left: 6px;
+}
+
+.completed-status {
+  color: #059669;
+  font-weight: 600;
+}
+
+.view-btn {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.view-btn:hover {
+  background: #e5e7eb;
+}
+
+button {
+  background: #1976d2;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+button:hover {
+  background: #1565c0;
 }
 </style>

@@ -22,7 +22,17 @@
     <section class="card">
       <h2>📝 本週 Check-in</h2>
 
-      <form @submit.prevent="onSubmit">
+      <!-- 已完成提示 -->
+      <div v-if="checkedThisWeek" class="completed-notice">
+        <div class="completed-icon">✅</div>
+        <div class="completed-text">
+          <h3>您已完成本週心理健康自評</h3>
+          <p>感謝您的配合，下週同一時間再次提醒您進行自評。</p>
+          <p class="next-time">下次可填寫時間：{{ nextAvailableTime }}</p>
+        </div>
+      </div>
+
+      <form v-else @submit.prevent="onSubmit">
         <ol class="q-list">
           <li v-for="q in questions" :key="q.key">
             <label class="q-title">{{ q.label }}</label>
@@ -46,8 +56,10 @@
         </label>
 
         <div class="actions">
-          <button class="btn" type="submit">提交自評</button>
-          <small class="hint">分數僅存於本機（localStorage），你可隨時刪除瀏覽器資料。</small>
+          <button class="btn" type="submit" :disabled="loading">
+            {{ loading ? '提交中...' : '提交自評' }}
+          </button>
+          <small class="hint">分數將安全儲存至伺服器，僅供個人心理健康追蹤使用。</small>
         </div>
       </form>
     </section>
@@ -78,21 +90,63 @@
     <!-- 每日心情打卡 -->
     <section class="card">
       <h2>🙂 每日心情打卡</h2>
-      <div class="mood-row">
-        <button
-          v-for="m in moods"
-          :key="m.value"
-          class="mood-btn"
-          :class="{ active: moodToday === m.value }"
-          @click="setMood(m.value)"
-          :title="m.label"
-        >
-          {{ m.icon }}
-        </button>
+      
+      <!-- 今日已打卡提示 -->
+      <div v-if="moodToday !== null && !showMoodSelector" class="mood-completed">
+        <div class="mood-status">
+          <div class="current-mood">
+            <span class="mood-icon-large">{{ getCurrentMoodIcon() }}</span>
+            <div class="mood-info">
+              <h3>今日心情已記錄</h3>
+              <p>{{ getCurrentMoodLabel() }}</p>
+              <small class="mood-time">記錄時間：{{ todayDateText }}</small>
+            </div>
+          </div>
+          <button @click="showMoodSelector = true" class="change-mood-btn">
+            修改心情
+          </button>
+        </div>
       </div>
-      <p class="mood-tip">今天感覺如何？選個表情記錄一下</p>
+
+      <!-- 心情選擇器 -->
+      <div v-else>
+        <div v-if="moodToday !== null" class="change-notice">
+          <p>⚠️ 您今日已記錄心情，確定要修改嗎？</p>
+        </div>
+        
+        <div class="mood-row">
+          <button
+            v-for="m in moods"
+            :key="m.value"
+            class="mood-btn"
+            :class="{ 
+              active: selectedMood === m.value,
+              current: moodToday === m.value && selectedMood === null 
+            }"
+            @click="selectMood(m.value)"
+            :title="m.label"
+          >
+            {{ m.icon }}
+          </button>
+        </div>
+        
+        <p class="mood-tip">
+          {{ moodToday === null ? '今天感覺如何？選個表情記錄一下' : '選擇新的心情狀態' }}
+        </p>
+        
+        <!-- 確認按鈕 -->
+        <div v-if="selectedMood !== null" class="mood-actions">
+          <button @click="confirmMood" class="confirm-btn" :disabled="submittingMood">
+            {{ submittingMood ? '記錄中...' : '確認記錄' }}
+          </button>
+          <button @click="cancelMoodSelection" class="cancel-btn">
+            取消
+          </button>
+        </div>
+      </div>
+      
       <div class="streak" v-if="streakDays > 0">
-        已連續打卡 <strong>{{ streakDays }}</strong> 天，太棒了！
+        已連續打卡 <strong>{{ streakDays }}</strong> 天，太棒了！🎉
       </div>
     </section>
 
@@ -130,8 +184,8 @@
 </template>
 
 <script setup>
-import { reactive, ref, computed } from 'vue'
-import wellbeing from '../router/wellbeing' // 之前提供的簡易 store
+import { reactive, ref, computed, onMounted } from 'vue'
+import notificationStore from '../stores/notifications'
 
 // 問卷題目（PHQ-4）
 const questions = [
@@ -150,18 +204,101 @@ const options = [
 const scores = reactive({ q1: 0, q2: 0, q3: 0, q4: 0 })
 const shareWithHR = ref(false)
 const result = ref(null)
+const lastAssessment = ref(null)
+const loading = ref(false)
 
 // 本週是否已完成 / 上次時間
-const checkedThisWeek = computed(() => wellbeing.checkedThisWeek.value)
+const checkedThisWeek = computed(() => {
+  if (!lastAssessment.value) return false
+  const lastDate = new Date(lastAssessment.value.created_at)
+  const now = new Date()
+  const diffDays = (now - lastDate) / (1000 * 60 * 60 * 24)
+  return diffDays < 7
+})
+
 const lastTimeText = computed(() => {
-  const iso = wellbeing.state.lastCheckISO
-  if (!iso) return '—'
-  const d = new Date(iso)
+  if (!lastAssessment.value) return '—'
+  const d = new Date(lastAssessment.value.created_at)
   return d.toLocaleString()
 })
 
-function onSubmit() {
-  result.value = wellbeing.submit(scores, shareWithHR.value)
+const nextAvailableTime = computed(() => {
+  if (!lastAssessment.value) return '—'
+  const lastDate = new Date(lastAssessment.value.created_at)
+  const nextDate = new Date(lastDate)
+  nextDate.setDate(nextDate.getDate() + 7)
+  return nextDate.toLocaleString()
+})
+
+// API 呼叫函數
+async function apiCall(url, options = {}) {
+  const response = await fetch(`http://localhost:5174/api${url}`, {
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    },
+    ...options
+  })
+  
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.error || '請求失敗')
+  }
+  
+  return response.json()
+}
+
+async function onSubmit() {
+  if (loading.value) return
+  
+  // 檢查是否已完成本週評估
+  if (checkedThisWeek.value) {
+    alert('您本週已完成心理健康自評，請下週再來填寫。')
+    return
+  }
+  
+  try {
+    loading.value = true
+    const response = await apiCall('/wellbeing/assessment', {
+      method: 'POST',
+      body: JSON.stringify({
+        q1: scores.q1,
+        q2: scores.q2,
+        q3: scores.q3,
+        q4: scores.q4,
+        shareWithHR: shareWithHR.value
+      })
+    })
+
+    result.value = {
+      total: response.total,
+      level: response.level,
+      advice: response.advice
+    }
+
+    // 重新載入最新評估
+    await loadLatestAssessment()
+    
+    // 更新通知狀態 - 標記心理健康相關通知為已讀
+    notificationStore.checkWellbeingNotification()
+    
+  } catch (error) {
+    console.error('提交心理自評失敗:', error)
+    alert('提交失敗：' + error.message)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 載入最新的心理自評
+async function loadLatestAssessment() {
+  try {
+    const response = await apiCall('/wellbeing/assessment/latest')
+    lastAssessment.value = response.data
+  } catch (error) {
+    console.error('載入最新評估失敗:', error)
+  }
 }
 
 // 等級顯示
@@ -182,52 +319,143 @@ function openResources() {
   alert('可導向更完整的資源頁面（/wellbeing/resources）')
 }
 
-// 心情打卡（本地儲存）
+// 心情打卡（API 版本）
 const moods = [
-  { value: 'good', label: '心情不錯', icon: '🙂' },
-  { value: 'ok',   label: '普通平穩', icon: '😐' },
-  { value: 'bad',  label: '有點低落', icon: '☹️' }
+  { value: 2, label: '心情不錯', icon: '🙂' },
+  { value: 1, label: '普通平穩', icon: '😐' },
+  { value: 0, label: '有點低落', icon: '☹️' }
 ]
-const moodToday = ref(loadMoodToday())
-const streakDays = ref(loadStreak())
+const moodToday = ref(null)
+const streakDays = ref(0)
+const selectedMood = ref(null)
+const showMoodSelector = ref(false)
+const submittingMood = ref(false)
+const moodRecordTime = ref(null)
 
-function setMood(val) {
-  moodToday.value = val
-  const todayKey = getDateKey(new Date())
-  const store = JSON.parse(localStorage.getItem('mood-log') || '{}')
-  if (store[todayKey] !== val) {
-    store[todayKey] = val
-    localStorage.setItem('mood-log', JSON.stringify(store))
-  }
-  streakDays.value = calcStreak(store)
+// 選擇心情（不直接提交）
+function selectMood(val) {
+  selectedMood.value = val
 }
 
-function loadMoodToday() {
-  const store = JSON.parse(localStorage.getItem('mood-log') || '{}')
-  return store[getDateKey(new Date())] || null
-}
-function loadStreak() {
-  const store = JSON.parse(localStorage.getItem('mood-log') || '{}')
-  return calcStreak(store)
-}
-function calcStreak(store) {
-  let days = 0
-  const d = new Date()
-  while (true) {
-    const key = getDateKey(d)
-    if (store[key]) {
-      days++
-      d.setDate(d.getDate() - 1)
-    } else break
+// 確認心情記錄
+async function confirmMood() {
+  if (selectedMood.value === null) return
+  
+  try {
+    submittingMood.value = true
+    await apiCall('/wellbeing/mood', {
+      method: 'POST',
+      body: JSON.stringify({ moodValue: selectedMood.value })
+    })
+    
+    moodToday.value = selectedMood.value
+    moodRecordTime.value = new Date().toISOString()
+    selectedMood.value = null
+    showMoodSelector.value = false
+    
+    // 重新載入連續打卡天數
+    await loadStreak()
+    
+    // 顯示成功提示
+    alert('心情記錄成功！感謝您的分享 😊')
+    
+  } catch (error) {
+    console.error('心情打卡失敗:', error)
+    alert('心情打卡失敗：' + error.message)
+  } finally {
+    submittingMood.value = false
   }
-  return days
 }
-function getDateKey(d) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+
+// 取消選擇
+function cancelMoodSelection() {
+  selectedMood.value = null
+  showMoodSelector.value = false
 }
+
+// 獲取當前心情圖示
+function getCurrentMoodIcon() {
+  const mood = moods.find(m => m.value === moodToday.value)
+  return mood ? mood.icon : '😐'
+}
+
+// 獲取當前心情標籤
+function getCurrentMoodLabel() {
+  const mood = moods.find(m => m.value === moodToday.value)
+  return mood ? mood.label : '未知'
+}
+
+// 今日日期文字
+const todayDateText = computed(() => {
+  return new Date().toLocaleDateString('zh-TW', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  })
+})
+
+// 載入今日心情
+async function loadMoodToday() {
+  try {
+    const response = await apiCall('/wellbeing/mood/today')
+    moodToday.value = response.moodValue
+    if (response.recordTime) {
+      moodRecordTime.value = response.recordTime
+    }
+    // 如果已有心情記錄，預設不顯示選擇器
+    if (moodToday.value !== null) {
+      showMoodSelector.value = false
+    } else {
+      showMoodSelector.value = true
+    }
+  } catch (error) {
+    console.error('載入今日心情失敗:', error)
+    // 如果載入失敗，預設顯示選擇器
+    showMoodSelector.value = true
+  }
+}
+
+// 載入連續打卡天數
+async function loadStreak() {
+  try {
+    const response = await apiCall('/wellbeing/mood/streak')
+    streakDays.value = response.streak
+  } catch (error) {
+    console.error('載入連續打卡天數失敗:', error)
+  }
+}
+
+// 檢查登入狀態
+async function checkAuthStatus() {
+  try {
+    const response = await fetch('http://localhost:5174/api/auth/me', {
+      credentials: 'include'
+    })
+    if (!response.ok) {
+      console.error('使用者未登入或登入已過期')
+      alert('請先登入才能使用心理健康功能')
+      return false
+    }
+    const data = await response.json()
+    console.log('當前登入使用者:', data.user)
+    return true
+  } catch (error) {
+    console.error('檢查登入狀態失敗:', error)
+    return false
+  }
+}
+
+// 初始化資料
+onMounted(async () => {
+  const isLoggedIn = await checkAuthStatus()
+  if (isLoggedIn) {
+    await Promise.all([
+      loadLatestAssessment(),
+      loadMoodToday(),
+      loadStreak()
+    ])
+  }
+})
 </script>
 
 <style scoped>
@@ -248,6 +476,40 @@ function getDateKey(d) {
 .kpi-num { color: var(--primary); font-size: 22px; font-weight: 800; line-height: 1; }
 .kpi-label { color: var(--text-light); font-size: 12px; margin-top: 4px; }
 
+/* 已完成提示 */
+.completed-notice {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: #f0f9ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.completed-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+}
+
+.completed-text h3 {
+  margin: 0 0 8px 0;
+  color: #1e40af;
+  font-size: 18px;
+}
+
+.completed-text p {
+  margin: 4px 0;
+  color: #374151;
+}
+
+.next-time {
+  font-size: 14px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
 /* 問卷 */
 .q-list { padding-left: 18px; }
 .q-title { display: block; margin: 10px 0 6px; font-weight: 600; color: var(--text); }
@@ -261,6 +523,9 @@ function getDateKey(d) {
   border-radius: 6px; cursor: pointer; font-weight: 600;
 }
 .btn:hover { background: var(--primary-dark); }
+.btn:disabled {
+  background: #ccc; cursor: not-allowed; opacity: 0.6;
+}
 .hint { color: var(--text-light); }
 
 /* 結果 */
@@ -283,14 +548,178 @@ function getDateKey(d) {
 .links a:hover { text-decoration: underline; }
 
 /* 心情打卡 */
-.mood-row { display: flex; gap: 10px; }
-.mood-btn {
-  width: 44px; height: 44px; border-radius: 50%;
-  border: 1px solid var(--border); background: #fff; cursor: pointer; font-size: 20px;
+.mood-completed {
+  background: #f0f9ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
 }
-.mood-btn.active { outline: 3px solid #c9dbff; }
-.mood-tip { color: var(--text-light); margin-top: 6px; }
-.streak { margin-top: 8px; }
+
+.mood-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.current-mood {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mood-icon-large {
+  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: white;
+  border-radius: 50%;
+  border: 2px solid #3b82f6;
+}
+
+.mood-info h3 {
+  margin: 0 0 4px 0;
+  color: #1e40af;
+  font-size: 16px;
+}
+
+.mood-info p {
+  margin: 0 0 4px 0;
+  color: #374151;
+  font-weight: 500;
+}
+
+.mood-time {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.change-mood-btn {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.change-mood-btn:hover {
+  background: #e5e7eb;
+}
+
+.change-notice {
+  background: #fef3cd;
+  border: 1px solid #fbbf24;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.change-notice p {
+  margin: 0;
+  color: #92400e;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.mood-row { 
+  display: flex; 
+  gap: 10px; 
+  margin-bottom: 12px;
+}
+
+.mood-btn {
+  width: 44px; 
+  height: 44px; 
+  border-radius: 50%;
+  border: 2px solid var(--border); 
+  background: #fff; 
+  cursor: pointer; 
+  font-size: 20px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.mood-btn:hover {
+  transform: scale(1.05);
+  border-color: #3b82f6;
+}
+
+.mood-btn.active { 
+  border-color: #3b82f6;
+  background: #dbeafe;
+  transform: scale(1.1);
+}
+
+.mood-btn.current {
+  border-color: #10b981;
+  background: #d1fae5;
+}
+
+.mood-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.confirm-btn {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.confirm-btn:hover:not(:disabled) {
+  background: #059669;
+}
+
+.confirm-btn:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.cancel-btn {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.cancel-btn:hover {
+  background: #e5e7eb;
+}
+
+.mood-tip { 
+  color: var(--text-light); 
+  margin: 6px 0 0 0;
+  font-size: 14px;
+}
+
+.streak { 
+  margin-top: 16px;
+  padding: 12px;
+  background: #ecfdf5;
+  border: 1px solid #10b981;
+  border-radius: 6px;
+  color: #065f46;
+  font-weight: 500;
+  text-align: center;
+}
 
 /* 資源牆 */
 .res-grid {
