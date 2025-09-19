@@ -8,8 +8,16 @@
       您的積分：{{ totalPoints }} ✨
     </div>
 
-    <div v-if="chatState === 'moodSelection'" class="mood-selection">
-      <div class="mood-prompt">您好，我是您的 AI 助理松坂烤肉。<br>在開始前，可以先告訴我您今天的心情嗎？</div>
+    <div v-if="!isLoggedIn || chatState === 'loginRequired'" class="login-prompt">
+      <div class="login-message">
+        <h3>🔒 請先登入</h3>
+        <p>使用聊天機器人需要先登入您的帳號<br>以便為您提供個人化的積分和心情記錄服務</p>
+        <router-link to="/login" class="login-button">前往登入</router-link>
+      </div>
+    </div>
+
+    <div v-else-if="chatState === 'moodSelection'" class="mood-selection">
+      <div class="mood-prompt">您好，{{ currentUser?.name || '用戶' }}！我是您的 AI 助理松坂烤肉。<br>在開始前，可以先告訴我您今天的心情嗎？</div>
       <div class="mood-emojis">
         <span @click="selectMood('Very Happy', '😀')">😀</span>
         <span @click="selectMood('Pretty Good', '🙂')">🙂</span>
@@ -38,9 +46,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue';
 import axios from 'axios';
 import { marked } from 'marked';
+import auth from '@/router/auth';
 
 // --- 圖片載入 (維持不變) ---
 import img1 from '@/assets/images/1.png';
@@ -71,6 +80,10 @@ const messagesContainer = ref(null);
 const sessionId = ref('');
 const chatState = ref('moodSelection');
 const totalPoints = ref(0);
+
+// 登入狀態檢查
+const currentUser = computed(() => auth.state.user);
+const isLoggedIn = computed(() => auth.isAuthed.value);
 
 let animationInterval = null;
 let talkingFrameIndex = 0;
@@ -113,54 +126,85 @@ const typewriterEffect = (fullText) => {
 };
 
 const fetchTotalPoints = async () => {
+  if (!currentUser.value?.id) return;
+
   try {
-    // 假設 user_id=1, 未來應從登入狀態取得
-    const response = await axios.get('http://localhost:5174/api/points', { // 請確認埠號
-      params: { user_id: 1 }
+    const response = await axios.get('http://localhost:8001/api/points', {
+      params: { user_id: currentUser.value.id }
     });
     totalPoints.value = response.data.total_points;
   } catch (error) {
     console.error("獲取總積分失敗:", error);
-    // 即使獲取失敗，也讓聊天繼續
   }
 };
 
 const selectMood = async (moodText, moodEmoji) => {
+  if (!currentUser.value?.id) {
+    alert('請先登入後再使用聊天機器人');
+    return;
+  }
+
+  // 再次檢查今天是否已記錄心情（防止重複提交）
+  try {
+    const checkResponse = await axios.get('http://localhost:8001/api/mood/check', {
+      params: { user_id: currentUser.value.id }
+    });
+
+    if (checkResponse.data.has_recorded) {
+      alert('您今天已經記錄過心情了！每24小時只能記錄一次。');
+      chatState.value = 'chatting';
+      typewriterEffect(`您今天已經記錄過心情了！讓我們開始聊天吧，有什麼我可以幫忙的嗎？`);
+      return;
+    }
+  } catch (error) {
+    console.error("檢查心情記錄失敗:", error);
+  }
+
   chatState.value = 'chatting';
   messages.value.push({ sender: 'user', text: moodEmoji });
   scrollToBottom();
   isLoading.value = true;
   const firstMessage = `Today I'm feeling: ${moodText}.`;
-  
+
   try {
-    const response = await axios.post('http://localhost:5174/api/chat', { // 請再次確認埠號
+    const response = await axios.post('http://localhost:8001/api/chat', {
       message: firstMessage,
       session_id: sessionId.value,
+      user_id: currentUser.value.id,
       mood: moodText
     });
 
     let finalReply = response.data.reply || response.data.error;
 
+    // 更新積分顯示
     if (response.data.total_points !== null && response.data.total_points !== undefined) {
       totalPoints.value = response.data.total_points;
+      console.log(`積分已更新: ${totalPoints.value}`);
     }
 
+    // 首次記錄心情的積分獎勵訊息
     if (finalReply && response.data.points_earned > 0) {
-      // 只有在 points_earned > 0 的時候，才組合這條訊息
-      const pointsMessage = `\n\n✨ 您今天首次記錄心情，獲得 1 點積分！總積分：${totalPoints.value}`;
+      const pointsMessage = `\n\n✨ 您今天首次記錄心情，獲得 ${response.data.points_earned} 點積分！總積分：${totalPoints.value}`;
       finalReply += pointsMessage;
+      console.log(`用戶獲得 ${response.data.points_earned} 積分`);
     }
-    
+
     typewriterEffect(finalReply);
 
   } catch (error) {
-    console.error("API call failed:", error);
-    const errorMessage = '抱歉，連線好像有點問題，請稍後再試。';
+    console.error("心情記錄失敗:", error);
+    const errorMessage = '抱歉，心情記錄時發生問題，請稍後再試。';
     typewriterEffect(errorMessage);
+    chatState.value = 'moodSelection'; // 失敗時回到心情選擇
   }
 };
 
 const sendMessage = async () => {
+  if (!currentUser.value?.id) {
+    alert('請先登入後再使用聊天機器人');
+    return;
+  }
+
   if (userInput.value.trim() === '' || isLoading.value) return;
   const userMessageText = userInput.value;
   messages.value.push({ sender: 'user', text: userMessageText });
@@ -168,14 +212,14 @@ const sendMessage = async () => {
   scrollToBottom();
   isLoading.value = true;
   try {
-    const response = await axios.post('http://localhost:5174/api/chat', {
+    const response = await axios.post('http://localhost:8001/api/chat', {
       message: userMessageText,
-      session_id: sessionId.value
+      session_id: sessionId.value,
+      user_id: currentUser.value.id
     });
     const reply = response.data.reply || response.data.error;
     typewriterEffect(reply);
-  } catch (error)
- {
+  } catch (error) {
     console.error("API call failed:", error);
     const errorMessage = '抱歉，連線好像有點問題，請稍後再試。';
     typewriterEffect(errorMessage);
@@ -191,29 +235,44 @@ const scrollToBottom = () => {
   });
 };
 
-onMounted(async () => {
+const initializeChatbot = async () => {
   sessionId.value = crypto.randomUUID();
   console.log(`New chat session started with ID: ${sessionId.value}`);
   playAnimation();
 
+  // 檢查登入狀態
+  if (!currentUser.value?.id) {
+    console.log("用戶未登入，顯示登入提示");
+    chatState.value = 'loginRequired';
+    return;
+  }
+
+  console.log(`用戶已登入: ${currentUser.value.name} (ID: ${currentUser.value.id})`);
+
   try {
-    const response = await axios.get('http://localhost:5174/api/mood/check', { // 請確認埠號
-        params: { user_id: 1 }
+    // 預先獲取積分
+    await fetchTotalPoints();
+    console.log(`當前積分: ${totalPoints.value}`);
+
+    // 檢查今天是否已記錄心情
+    const response = await axios.get('http://localhost:8001/api/mood/check', {
+        params: { user_id: currentUser.value.id }
     });
 
     if (response.data.has_recorded) {
       chatState.value = 'chatting';
-      // ===== 修改點 5: 如果直接進入聊天，也要獲取一次總積分 =====
-      await fetchTotalPoints(); 
-      typewriterEffect("歡迎回來！很高興再次見到您，今天有什麼我可以協助您的嗎？");
+      typewriterEffect(`歡迎回來，${currentUser.value.name}！很高興再次見到您，今天有什麼我可以協助您的嗎？`);
     } else {
       chatState.value = 'moodSelection';
+      console.log("今天尚未記錄心情，顯示心情選擇");
     }
   } catch (error) {
-    console.error("檢查心情記錄失敗:", error);
+    console.error("初始化聊天機器人失敗:", error);
     chatState.value = 'moodSelection';
   }
-});
+};
+
+onMounted(initializeChatbot);
 
 onUnmounted(() => {
   if (animationInterval) clearInterval(animationInterval);
@@ -222,6 +281,42 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.login-prompt {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  flex-grow: 1;
+  padding: 20px;
+  text-align: center;
+}
+
+.login-message h3 {
+  margin-bottom: 15px;
+  color: #333;
+  font-size: 18px;
+}
+
+.login-message p {
+  margin-bottom: 20px;
+  color: #666;
+  line-height: 1.6;
+}
+
+.login-button {
+  display: inline-block;
+  padding: 10px 20px;
+  background-color: #007bff;
+  color: white;
+  text-decoration: none;
+  border-radius: 20px;
+  transition: background-color 0.2s;
+}
+
+.login-button:hover {
+  background-color: #0056b3;
+}
+
 .mood-selection {
   display: flex;
   flex-direction: column;

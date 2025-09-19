@@ -3,10 +3,11 @@ import uvicorn
 import mysql.connector
 from datetime import date
 from typing import Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import jwt
 from langchain_groq import ChatGroq
 #from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import Chroma
@@ -49,6 +50,56 @@ def get_db_connection():
         print(f"資料庫連線失敗: {err}")
         return None
 
+# 初始化資料庫表格
+def init_database_tables():
+    """建立聊天機器人所需的資料表"""
+    conn = get_db_connection()
+    if not conn:
+        print("無法連接資料庫，跳過表格初始化")
+        return False
+
+    cursor = conn.cursor()
+    try:
+        # 建立 mood_entries 表
+        mood_entries_sql = """
+        CREATE TABLE IF NOT EXISTS mood_entries (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            mood_score INT NOT NULL COMMENT '1-5分，1最差，5最好',
+            entry_date DATE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_user_date (user_id, entry_date),
+            INDEX idx_user_id (user_id),
+            INDEX idx_entry_date (entry_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        """
+        cursor.execute(mood_entries_sql)
+        print("✓ mood_entries 表已建立或確認存在")
+
+        # 建立 user_points 表
+        user_points_sql = """
+        CREATE TABLE IF NOT EXISTS user_points (
+            user_id INT PRIMARY KEY,
+            points INT NOT NULL DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_points (points)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        """
+        cursor.execute(user_points_sql)
+        print("✓ user_points 表已建立或確認存在")
+
+        conn.commit()
+        print("🎉 資料庫表格初始化完成")
+        return True
+
+    except mysql.connector.Error as err:
+        print(f"建立表格時發生錯誤: {err}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
 # 心情文字到分數的對應
 MOOD_TO_SCORE = {
     'Very Sad': 1,
@@ -62,6 +113,7 @@ MOOD_TO_SCORE = {
 class ChatRequest(BaseModel):
     message: str
     session_id: str = Field(..., description="追蹤同一個對話的唯一ID")
+    user_id: int = Field(..., description="用戶ID")
     mood: Optional[str] = None
 
 # --- RAG 核心元件 ---
@@ -152,7 +204,7 @@ class User(BaseModel):
 
 
 @app.get("/api/points")
-async def get_total_points(user_id: int = 1): # 暫時寫死 user_id=1
+async def get_total_points(user_id: int):
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=500, detail="無法連接到資料庫")
@@ -176,28 +228,91 @@ async def get_total_points(user_id: int = 1): # 暫時寫死 user_id=1
 
 
 @app.get("/api/auth/me", response_model=User)
-async def read_users_me():
-    # 在這裡，您應該加入真正的邏輯來驗證 token 並從資料庫獲取使用者
-    # 作為範例，我們先回傳一個固定的假使用者資料
-    # TODO: 替換為真實的使用者驗證邏輯
-    return {"id": 1, "name": "Test User", "email": "test@example.com"}
+async def read_users_me(request: Request):
+    try:
+        # 取得 JWT token
+        token = request.cookies.get("token")
+        if not token:
+            raise HTTPException(status_code=401, detail="未登入")
+
+        # 驗證 JWT token
+        JWT_SECRET = os.getenv("JWT_SECRET", "dev_secret")
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+            user_id = payload.get("uid")
+            if not user_id:
+                raise HTTPException(status_code=401, detail="無效的 token")
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="登入逾期")
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="無效的 token")
+
+        # 從資料庫查詢用戶資料
+        conn = get_db_connection()
+        if not conn:
+            raise HTTPException(status_code=500, detail="無法連接到資料庫")
+
+        cursor = conn.cursor(dictionary=True)
+        try:
+            query = "SELECT id, name, email, role, dept, avatar_url FROM users WHERE id = %s"
+            cursor.execute(query, (user_id,))
+            user_data = cursor.fetchone()
+
+            if not user_data:
+                raise HTTPException(status_code=401, detail="無此使用者")
+
+            return {
+                "id": user_data["id"],
+                "name": user_data["name"],
+                "email": user_data["email"]
+            }
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"auth/me 錯誤: {e}")
+        raise HTTPException(status_code=500, detail="伺服器錯誤")
 
 @app.get("/api/mood/check")
-async def check_mood_today(user_id: int = 1):
+async def check_mood_today(user_id: int):
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=500, detail="無法連接到資料庫")
-    
-    cursor = conn.cursor(dictionary=True) # 改為 dictionary cursor
+
+    cursor = conn.cursor(dictionary=True)
     try:
         today = date.today()
-        # 使用正確的欄位 entry_date
-        query = "SELECT user_id FROM mood_entries WHERE user_id = %s AND entry_date = %s"
+        # 查詢今天的心情記錄，包含時間資訊
+        query = """
+            SELECT user_id, mood_score, entry_date, created_at
+            FROM mood_entries
+            WHERE user_id = %s AND entry_date = %s
+        """
         cursor.execute(query, (user_id, today))
         result = cursor.fetchone()
-        
-        return {"has_recorded": result is not None} # 回傳是否存在紀錄
-        
+
+        response_data = {
+            "has_recorded": result is not None,
+            "user_id": user_id,
+            "date": str(today)
+        }
+
+        if result:
+            response_data.update({
+                "mood_score": result['mood_score'],
+                "recorded_at": str(result['created_at']),
+                "entry_date": str(result['entry_date'])
+            })
+            print(f"用戶 {user_id} 今天已記錄心情: 分數 {result['mood_score']}, 時間 {result['created_at']}")
+        else:
+            print(f"用戶 {user_id} 今天尚未記錄心情")
+
+        return response_data
+
     except mysql.connector.Error as err:
         print(f"查詢心情失敗: {err}")
         raise HTTPException(status_code=500, detail="查詢心情時發生錯誤")
@@ -218,7 +333,7 @@ async def chat(request: ChatRequest):
             cursor = conn.cursor(dictionary=True)
             today = date.today()
             try:
-                user_id = 1
+                user_id = request.user_id
                 mood_score = MOOD_TO_SCORE.get(request.mood)
 
                 if mood_score:
@@ -249,6 +364,7 @@ async def chat(request: ChatRequest):
                     get_total_query = "SELECT points FROM user_points WHERE user_id = %s"
                     cursor.execute(get_total_query, (user_id,))
                     result = cursor.fetchone()
+                    total_points = result['points'] if result else 0
 
             except mysql.connector.Error as err:
                 print(f"處理心情與積分時發生錯誤: {err}")
@@ -273,6 +389,64 @@ async def chat(request: ChatRequest):
 def read_root():
     return {"Hello": "RAG Backend with Groq is running!"}
 
+@app.get("/api/mood/history")
+async def get_mood_history(user_id: int, days: int = 7):
+    """獲取用戶最近N天的心情記錄"""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="無法連接到資料庫")
+
+    cursor = conn.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT mood_score, entry_date, created_at
+            FROM mood_entries
+            WHERE user_id = %s
+            ORDER BY entry_date DESC
+            LIMIT %s
+        """
+        cursor.execute(query, (user_id, days))
+        results = cursor.fetchall()
+
+        history = []
+        for row in results:
+            history.append({
+                "mood_score": row['mood_score'],
+                "entry_date": str(row['entry_date']),
+                "recorded_at": str(row['created_at'])
+            })
+
+        return {
+            "user_id": user_id,
+            "history": history,
+            "total_records": len(history)
+        }
+
+    except mysql.connector.Error as err:
+        print(f"查詢心情歷史失敗: {err}")
+        raise HTTPException(status_code=500, detail="查詢心情歷史時發生錯誤")
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.post("/api/admin/init-db")
+async def init_db_tables():
+    """手動初始化資料庫表格的管理端點"""
+    try:
+        if init_database_tables():
+            return {"success": True, "message": "資料庫表格初始化成功"}
+        else:
+            raise HTTPException(status_code=500, detail="資料庫表格初始化失敗")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"初始化過程中發生錯誤: {str(e)}")
+
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000)) 
+    # 初始化資料庫表格
+    print("🚀 正在啟動後端服務...")
+    if init_database_tables():
+        print("✅ 資料庫初始化成功")
+    else:
+        print("⚠️ 資料庫初始化失敗，但服務將繼續啟動")
+
+    port = int(os.getenv("PORT", 8000))
     uvicorn.run("main:app", host="127.0.0.1", port=port, reload=True)
