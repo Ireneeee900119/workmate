@@ -43,6 +43,15 @@
         </ul>
         <p class="link"><router-link to="/community">前往社群 →</router-link></p>
       </section>
+
+      <!-- RPG 導覽 -->
+      <section class="card">
+        <h2>入職 RPG 導覽</h2>
+        <p>第一天就像 RPG 冒險，探索公司環境、完成任務。</p>
+        <a href="/corporate-rpg.html" target="_blank" class="btn">
+          開始 RPG →
+        </a>
+      </section>
     </div>
   </div>
 </template>
