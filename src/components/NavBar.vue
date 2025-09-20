@@ -11,6 +11,7 @@
         <router-link to="/">首頁</router-link>
         <router-link to="/training">職涯訓練</router-link>
         <router-link to="/community">社群</router-link>
+        <router-link to="/map">地圖概覽</router-link>
         <router-link to="/notifications" class="notification-link">
           通知
           <span v-if="unreadCount > 0" class="unread-badge">{{ unreadCount }}</span>

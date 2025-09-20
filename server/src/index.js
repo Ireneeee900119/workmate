@@ -186,6 +186,13 @@ async function initTables() {
 	} catch (err) {
 		// 欄位可能已存在，忽略錯誤
 	}
+
+	// 為 posts 表新增 board 欄位（分版），若不存在
+	try {
+		await db.query("ALTER TABLE posts ADD COLUMN board VARCHAR(50) DEFAULT 'general'")
+	} catch (err) {
+		// 欄位可能已存在，忽略錯誤
+	}
 }
 
 // middlewares
