@@ -10,9 +10,11 @@
       <nav class="nav-links" :class="{ open: openMenu }">
         <router-link to="/">首頁</router-link>
         <router-link to="/training">職涯訓練</router-link>
-        <router-link to="/wellbeing">心理健康</router-link>
         <router-link to="/community">社群</router-link>
-        <router-link to="/notifications">通知</router-link>
+        <router-link to="/notifications" class="notification-link">
+          通知
+          <span v-if="unreadCount > 0" class="unread-badge">{{ unreadCount }}</span>
+        </router-link>
       </nav>
     </div>
 
@@ -37,7 +39,10 @@
         <!-- 下拉選單 -->
         <div class="dropdown" v-if="showDropdown" @click.stop>
           <router-link to="/" class="item">個人資料</router-link>
-          <router-link to="/notifications" class="item">通知</router-link>
+          <router-link to="/notifications" class="item notification-link">
+            通知
+            <span v-if="unreadCount > 0" class="unread-badge">{{ unreadCount }}</span>
+          </router-link>
           <div class="sep"></div>
           <button class="item danger" @click="logout">登出</button>
         </div>
@@ -52,18 +57,59 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import auth from '../router/auth'
+import { notificationUtils, unreadCount } from '../utils/notifications'
 
 const showDropdown = ref(false)
 const openMenu = ref(false)
+
+// 載入未讀通知數量
+async function loadUnreadCount() {
+  if (!auth.isAuthed.value) {
+    unreadCount.value = 0
+    return
+  }
+
+  try {
+    // 載入通知，會自動更新全局的 unreadCount
+    await notificationUtils.loadNotifications()
+  } catch (error) {
+    console.error('獲取未讀通知數量失敗:', error)
+    unreadCount.value = 0
+  }
+}
+
+// 監聽認證狀態變化
+watch(auth.isAuthed, (isAuthed) => {
+  if (isAuthed) {
+    loadUnreadCount()
+  } else {
+    unreadCount.value = 0
+  }
+}, { immediate: true })
 
 function toggleDropdown() { showDropdown.value = !showDropdown.value }
 function onClickOutside(e) {
   const nav = document.querySelector('.navbar')
   if (nav && !nav.contains(e.target)) showDropdown.value = false
 }
-onMounted(() => document.addEventListener('click', onClickOutside))
+onMounted(() => {
+  document.addEventListener('click', onClickOutside)
+
+  // 定期更新未讀數量（每30秒）
+  const interval = setInterval(() => {
+    if (auth.isAuthed.value) {
+      loadUnreadCount()
+    }
+  }, 30000)
+
+  // 清理定時器
+  onBeforeUnmount(() => {
+    clearInterval(interval)
+  })
+})
+
 onBeforeUnmount(() => document.removeEventListener('click', onClickOutside))
 
 async function logout() {
@@ -135,6 +181,39 @@ async function logout() {
 .hamburger {
   display: none; background: none; border: 1px solid var(--border);
   border-radius: 6px; width: 36px; height: 32px; cursor: pointer;
+}
+
+/* 通知徽章樣式 */
+.notification-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.unread-badge {
+  background: #f44336;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+  line-height: 1.2;
+  animation: badge-pulse 2s infinite;
+}
+
+@keyframes badge-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 /* RWD */

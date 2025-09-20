@@ -243,7 +243,7 @@ router.get('/courses/list', async (req, res) => {
         required: true,
         durationMin: 90,
         tags: ['資安', '必修'],
-        videoUrl: '/videos/course-1.mp4'
+        videoUrl: '/videos/course-2.mp4'
       },
       {
         id: 3,
@@ -253,7 +253,7 @@ router.get('/courses/list', async (req, res) => {
         required: false,
         durationMin: 120,
         tags: ['半導體', '製程'],
-        videoUrl: '/videos/course-1.mp4'
+        videoUrl: '/videos/course-3.mp4'
       },
       {
         id: 4,
@@ -263,7 +263,7 @@ router.get('/courses/list', async (req, res) => {
         required: false,
         durationMin: 45,
         tags: ['EUV', '安全'],
-        videoUrl: '/videos/course-1.mp4'
+        videoUrl: '/videos/course-4.mp4'
       },
       {
         id: 5,
@@ -273,7 +273,7 @@ router.get('/courses/list', async (req, res) => {
         required: false,
         durationMin: 75,
         tags: ['職涯', '發展'],
-        videoUrl: '/videos/course-1.mp4'
+        videoUrl: '/videos/course-5.mp4'
       }
     ]
     

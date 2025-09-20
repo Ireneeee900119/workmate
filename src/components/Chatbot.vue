@@ -8,7 +8,7 @@
       您的積分：{{ totalPoints }} ✨
     </div>
 
-    <div v-if="!isLoggedIn || chatState === 'loginRequired'" class="login-prompt">
+    <div v-if="!isLoggedIn" class="login-prompt">
       <div class="login-message">
         <h3>🔒 請先登入</h3>
         <p>使用聊天機器人需要先登入您的帳號<br>以便為您提供個人化的積分和心情記錄服務</p>
@@ -46,7 +46,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue';
 import axios from 'axios';
 import { marked } from 'marked';
 import auth from '@/router/auth';
@@ -86,6 +86,7 @@ const currentUser = computed(() => auth.state.user);
 const isLoggedIn = computed(() => auth.isAuthed.value);
 
 let animationInterval = null;
+let pointsUpdateInterval = null;
 let talkingFrameIndex = 0;
 
 // --- 動畫與打字機效果函式 (維持不變) ---
@@ -129,7 +130,7 @@ const fetchTotalPoints = async () => {
   if (!currentUser.value?.id) return;
 
   try {
-    const response = await axios.get('http://localhost:8001/api/points', {
+    const response = await axios.get('http://localhost:8000/api/points', {
       params: { user_id: currentUser.value.id }
     });
     totalPoints.value = response.data.total_points;
@@ -146,12 +147,11 @@ const selectMood = async (moodText, moodEmoji) => {
 
   // 再次檢查今天是否已記錄心情（防止重複提交）
   try {
-    const checkResponse = await axios.get('http://localhost:8001/api/mood/check', {
+    const checkResponse = await axios.get('http://localhost:8000/api/mood/check', {
       params: { user_id: currentUser.value.id }
     });
 
     if (checkResponse.data.has_recorded) {
-      alert('您今天已經記錄過心情了！每24小時只能記錄一次。');
       chatState.value = 'chatting';
       typewriterEffect(`您今天已經記錄過心情了！讓我們開始聊天吧，有什麼我可以幫忙的嗎？`);
       return;
@@ -167,11 +167,12 @@ const selectMood = async (moodText, moodEmoji) => {
   const firstMessage = `Today I'm feeling: ${moodText}.`;
 
   try {
-    const response = await axios.post('http://localhost:8001/api/chat', {
+    const response = await axios.post('http://localhost:8000/api/chat', {
       message: firstMessage,
       session_id: sessionId.value,
       user_id: currentUser.value.id,
-      mood: moodText
+      mood: moodText,
+      chat_history: messages.value
     });
 
     let finalReply = response.data.reply || response.data.error;
@@ -184,7 +185,7 @@ const selectMood = async (moodText, moodEmoji) => {
 
     // 首次記錄心情的積分獎勵訊息
     if (finalReply && response.data.points_earned > 0) {
-      const pointsMessage = `\n\n✨ 您今天首次記錄心情，獲得 ${response.data.points_earned} 點積分！總積分：${totalPoints.value}`;
+      const pointsMessage = `\n\n✨ 您今天首次記錄心情，獲得 ${response.data.points_earned} 點積分！總積分：${totalPoints.value} `;
       finalReply += pointsMessage;
       console.log(`用戶獲得 ${response.data.points_earned} 積分`);
     }
@@ -212,12 +213,28 @@ const sendMessage = async () => {
   scrollToBottom();
   isLoading.value = true;
   try {
-    const response = await axios.post('http://localhost:8001/api/chat', {
+    const response = await axios.post('http://localhost:8000/api/chat', {
       message: userMessageText,
       session_id: sessionId.value,
-      user_id: currentUser.value.id
+      user_id: currentUser.value.id,
+      chat_history: messages.value
     });
-    const reply = response.data.reply || response.data.error;
+
+    let reply = response.data.reply || response.data.error;
+
+    // 更新積分顯示
+    if (response.data.total_points !== null && response.data.total_points !== undefined) {
+      totalPoints.value = response.data.total_points;
+      console.log(`積分已更新: ${totalPoints.value}`);
+    }
+
+    // 如果獲得積分，在回覆中添加積分訊息
+    if (response.data.points_earned && response.data.points_earned > 0) {
+      const pointsMessage = `\n\n✨ 您獲得了 ${response.data.points_earned} 點積分！總積分：${totalPoints.value}`;
+      reply += pointsMessage;
+      console.log(`用戶獲得 ${response.data.points_earned} 積分`);
+    }
+
     typewriterEffect(reply);
   } catch (error) {
     console.error("API call failed:", error);
@@ -233,6 +250,16 @@ const scrollToBottom = () => {
       messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
     }
   });
+};
+
+const startPointsUpdate = () => {
+  // 每30秒更新一次積分
+  if (pointsUpdateInterval) clearInterval(pointsUpdateInterval);
+  pointsUpdateInterval = setInterval(async () => {
+    if (currentUser.value?.id && chatState.value === 'chatting') {
+      await fetchTotalPoints();
+    }
+  }, 30000);
 };
 
 const initializeChatbot = async () => {
@@ -254,23 +281,46 @@ const initializeChatbot = async () => {
     await fetchTotalPoints();
     console.log(`當前積分: ${totalPoints.value}`);
 
+    // 開始定期更新積分
+    startPointsUpdate();
+
     // 檢查今天是否已記錄心情
-    const response = await axios.get('http://localhost:8001/api/mood/check', {
+    console.log(`DEBUG: 即將檢查用戶 ${currentUser.value.id} 的心情記錄`);
+    const response = await axios.get('http://localhost:8000/api/mood/check', {
         params: { user_id: currentUser.value.id }
     });
 
+    console.log(`DEBUG: 心情檢查回應:`, response.data);
+
     if (response.data.has_recorded) {
+      console.log("DEBUG: 用戶已記錄心情，進入聊天狀態");
       chatState.value = 'chatting';
       typewriterEffect(`歡迎回來，${currentUser.value.name}！很高興再次見到您，今天有什麼我可以協助您的嗎？`);
     } else {
+      console.log("DEBUG: 用戶未記錄心情，顯示心情選擇");
       chatState.value = 'moodSelection';
-      console.log("今天尚未記錄心情，顯示心情選擇");
     }
   } catch (error) {
     console.error("初始化聊天機器人失敗:", error);
-    chatState.value = 'moodSelection';
+    // 當無法檢查心情記錄狀態時，直接進入聊天模式，避免卡在心情選擇
+    chatState.value = 'chatting';
+    typewriterEffect(`歡迎回來，${currentUser.value.name}！系統初始化時遇到小問題，讓我們直接開始聊天吧！`);
   }
 };
+
+// 監聽登入狀態變化：登入後自動初始化聊天機器人；未登入顯示登入提示
+watch(isLoggedIn, async (val) => {
+  if (val) {
+    chatState.value = 'moodSelection'
+    try {
+      await initializeChatbot()
+    } catch (e) {
+      console.warn('初始化聊天機器人失敗：', e)
+    }
+  } else {
+    chatState.value = 'loginRequired'
+  }
+})
 
 onMounted(initializeChatbot);
 

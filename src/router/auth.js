@@ -42,11 +42,6 @@ async function login({ email, password }) {
 	const data = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
 	state.user = data.user
 	save()
-
-	// 登入成功後導向首頁
-	console.log('登入成功，導向首頁...')
-	window.location.href = '/'
-
 	return data.user
 }
 

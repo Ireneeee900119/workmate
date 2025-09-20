@@ -96,15 +96,7 @@
           </div>
         </div>
 
-        <!-- 學習進度提示 -->
-        <div v-if="isWatching && !isCompleted && !showFastForwardWarning" class="progress-indicator">
-          <div class="progress-bar">
-            <div class="progress-fill" :style="{ width: currentProgress + '%' }"></div>
-          </div>
-          <span class="progress-label-small">
-            學習進度: {{ currentProgress }}% ({{ formatTime(currentVideoTime) }}/{{ formatTime(videoDuration) }})
-          </span>
-        </div>
+        
         
         <!-- 登入狀態丟失彈窗 -->
         <div v-if="showAuthLostModal" class="auth-lost-overlay">
@@ -777,41 +769,7 @@ watch(() => route.params.id, (newId) => {
   margin-top: 20px;
 }
 
-/* 進度指示器 */
-.progress-indicator {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
-  right: 10px;
-  background: rgba(0, 0, 0, 0.7);
-  padding: 8px 12px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.progress-bar {
-  flex: 1;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: var(--success);
-  transition: width 0.3s ease;
-}
-
-.progress-label-small {
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  min-width: 120px;
-  text-align: right;
-}
+/* 已移除影片上方進度指示器樣式 */
 
 /* 影片資訊 */
 .video-info {

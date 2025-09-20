@@ -32,7 +32,7 @@ def build_database():
         print(f"在 '{DATA_PATH}' 資料夾中找不到任何可讀取的文件。")
         return
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=60)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     chunked_documents = text_splitter.split_documents(documents)
     print(f"文件已成功切分為 {len(chunked_documents)} 個文字區塊。")
 

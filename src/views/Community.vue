@@ -60,7 +60,13 @@
         <img v-if="post.imageUrl" :src="post.imageUrl" alt="post image" class="post-image" />
 
         <div class="post-footer">
-          <button @click="likePost(post.id)" :disabled="!isLoggedIn">👍 {{ post.likes || 0 }}</button>
+          <button
+            @click="likePost(post.id)"
+            :disabled="!isLoggedIn"
+            :class="{ 'liked': post.liked }"
+          >
+            {{ post.liked ? '❤️' : '👍' }} {{ post.likes || 0 }}
+          </button>
           <button @click="toggleComments(post.id)">💬 {{ post.comments?.length || 0 }}</button>
           <button @click="bookmarkPost(post.id)" :disabled="!isLoggedIn">
             ⭐ {{ post.bookmarked ? '已收藏' : '收藏' }}
@@ -146,12 +152,19 @@ async function fetchPosts() {
       // 轉換後端資料格式為前端需要的格式
       posts.value = data.posts.map(post => ({
         ...post,
-        likes: post.likes || 0,
-        comments: post.comments || [],
+        likes: post.likes_count || 0,
+        comments: [],
         showComments: false,
         bookmarked: false,
+        liked: false,
         tag: post.tag || '一般'
       }))
+
+      // 為每個貼文獲取點讚狀態和留言
+      for (const post of posts.value) {
+        await fetchLikeStatus(post.id)
+        await fetchPostComments(post.id)
+      }
     } else {
       console.error('載入貼文失敗:', response.status)
     }
@@ -162,10 +175,42 @@ async function fetchPosts() {
   }
 }
 
+// 獲取貼文點讚狀態
+async function fetchLikeStatus(postId) {
+  try {
+    const response = await fetch(`/api/posts/${postId}/like-status`, { credentials: 'include' })
+    if (response.ok) {
+      const data = await response.json()
+      const post = posts.value.find(p => p.id === postId)
+      if (post) {
+        post.liked = data.liked
+      }
+    }
+  } catch (error) {
+    console.error('獲取點讚狀態失敗:', error)
+  }
+}
+
+// 獲取貼文留言
+async function fetchPostComments(postId) {
+  try {
+    const response = await fetch(`/api/posts/${postId}/comments`, { credentials: 'include' })
+    if (response.ok) {
+      const data = await response.json()
+      const post = posts.value.find(p => p.id === postId)
+      if (post) {
+        post.comments = data.comments
+      }
+    }
+  } catch (error) {
+    console.error('獲取留言失敗:', error)
+  }
+}
+
 // 發文
 async function addPost() {
   if (!newPost.value.trim() || !isLoggedIn.value) return
-  
+
   isPosting.value = true
   try {
     const response = await fetch('/api/posts', {
@@ -174,6 +219,7 @@ async function addPost() {
       credentials: 'include',
       body: JSON.stringify({
         content: newPost.value.trim(),
+        tag: selectedTag.value,
         imageUrl: uploadedImage.value
       })
     })
@@ -183,16 +229,18 @@ async function addPost() {
       // 將新貼文加到列表最前面
       posts.value.unshift({
         ...data.post,
-        likes: 0,
+        likes: data.post.likes_count || 0,
         comments: [],
         showComments: false,
         bookmarked: false,
+        liked: false,
         tag: selectedTag.value
       })
-      
+
       // 清空表單
       newPost.value = ''
       uploadedImage.value = null
+      selectedTag.value = '生活'
     } else {
       const error = await response.json()
       alert(error.error || '發文失敗')
@@ -213,10 +261,28 @@ function onImageUpload(e) {
   }
 }
 
-function likePost(id) {
+async function likePost(id) {
   if (!isLoggedIn.value) return
-  const post = posts.value.find(p => p.id === id)
-  if (post) post.likes++
+
+  try {
+    const response = await fetch(`/api/posts/${id}/like`, {
+      method: 'POST',
+      credentials: 'include'
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      const post = posts.value.find(p => p.id === id)
+      if (post) {
+        post.liked = data.liked
+        post.likes = data.likes_count
+      }
+    } else {
+      console.error('點讚失敗:', response.status)
+    }
+  } catch (error) {
+    console.error('點讚失敗:', error)
+  }
 }
 
 function toggleComments(id) {
@@ -224,18 +290,36 @@ function toggleComments(id) {
   if (post) post.showComments = !post.showComments
 }
 
-function addComment(id) {
+async function addComment(id) {
   if (!isLoggedIn.value) return
   const post = posts.value.find(p => p.id === id)
   if (!post) return
   const text = newComments.value[id]
   if (!text || !text.trim()) return
-  post.comments.push({ 
-    user: currentUser.value?.name || '你', 
-    text, 
-    time: '剛剛' 
-  })
-  newComments.value[id] = ''
+
+  try {
+    const response = await fetch(`/api/posts/${id}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        content: text.trim()
+      })
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      post.comments.push(data.comment)
+      newComments.value[id] = ''
+
+      // 更新留言數
+      post.comments_count = (post.comments_count || 0) + 1
+    } else {
+      console.error('新增留言失敗:', response.status)
+    }
+  } catch (error) {
+    console.error('新增留言失敗:', error)
+  }
 }
 
 function bookmarkPost(id) {
@@ -319,6 +403,7 @@ onMounted(async () => {
   padding: 8px;
   border: 1px solid #ccc;
   border-radius: 6px;
+  box-sizing: border-box;
 }
 .post-box .actions {
   margin-top: 8px;
@@ -441,6 +526,11 @@ onMounted(async () => {
 .post-footer button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.post-footer button.liked {
+  color: #e74c3c;
+  font-weight: bold;
 }
 
 /* 留言 */

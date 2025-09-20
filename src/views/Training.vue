@@ -230,7 +230,7 @@ onMounted(async () => {
     // 如果未登入，重導向到登入頁面
     router.push('/login')
   }
-  
+
   // 載入所有課程的實際影片時間長度
   try {
     await training.loadAllVideosDuration()

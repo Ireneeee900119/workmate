@@ -43,7 +43,7 @@ const state = reactive({
       required: true,
       durationMin: 90,
       tags: ['資安', '必修'],
-      videoUrl: '/videos/course-1.mp4' // 本地影片檔案路徑
+      videoUrl: '/videos/course-2.mp4' // 本地影片檔案路徑
     },
     {
       id: 3,
@@ -53,7 +53,7 @@ const state = reactive({
       required: false,
       durationMin: 120,
       tags: ['半導體', '製程'],
-      videoUrl: '/videos/course-1.mp4' // 本地影片檔案路徑
+      videoUrl: '/videos/course-3.mp4' // 本地影片檔案路徑
     },
     {
       id: 4,
@@ -63,7 +63,7 @@ const state = reactive({
       required: false,
       durationMin: 45,
       tags: ['EUV', '安全'],
-      videoUrl: '/videos/course-1.mp4' // 本地影片檔案路徑
+      videoUrl: '/videos/course-4.mp4' // 本地影片檔案路徑
     },
     {
       id: 5,
@@ -73,7 +73,7 @@ const state = reactive({
       required: false,
       durationMin: 75,
       tags: ['職涯', '發展'],
-      videoUrl: '/videos/course-1.mp4' // 本地影片檔案路徑
+      videoUrl: '/videos/course-5.mp4' // 本地影片檔案路徑
     }
   ],
   // 紀錄每門課進度：0~100（從 API 載入）

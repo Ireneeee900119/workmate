@@ -12,13 +12,12 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-
+/public/videos/
 /backend/__pycache__/
 /backend/chroma_db/
 .env
 .env.*
 /backend/.env
-
 node_modules
 dist
 dist-ssr
