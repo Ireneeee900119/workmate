@@ -21,6 +21,8 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import auth from '../router/auth'
+import { checkTrainingProgress } from '../utils/notifications'
+import training from '../router/training'
 
 const router = useRouter()
 const email = ref('')
@@ -33,6 +35,14 @@ async function onSubmit() {
   loading.value = true
   try {
     await auth.login({ email: email.value, password: password.value })
+    // 重新載入進度資料，並在登入後觸發訓練提醒
+    try {
+      await training.loadProgress()
+      await checkTrainingProgress(training)
+    } catch (e) {
+      // 提醒失敗不影響登入流程
+      console.warn('登入後檢查訓練提醒失敗：', e)
+    }
     router.push('/')
   } catch (e) {
     error.value = e.message || '登入失敗'
