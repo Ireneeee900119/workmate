@@ -15,6 +15,8 @@ lerna-debug.log*
 /public/videos/
 /backend/__pycache__/
 /backend/chroma_db/
+/server/.env
+
 .env
 .env.*
 /backend/.env

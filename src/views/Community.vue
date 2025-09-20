@@ -13,13 +13,6 @@
     <div v-if="isLoggedIn" class="post-box">
       <textarea v-model="newPost" placeholder="分享你的想法..." />
       <div class="actions">
-        <select v-model="selectedTag">
-          <option value="生活">生活</option>
-          <option value="租屋">租屋</option>
-          <option value="美食">美食</option>
-          <option value="心情">心情</option>
-          <option value="技術">技術</option>
-        </select>
         <input type="file" @change="onImageUpload" />
         <button :disabled="!newPost.trim() || isPosting" @click="addPost">
           {{ isPosting ? '發佈中...' : '發佈' }}
@@ -27,7 +20,7 @@
       </div>
     </div>
 
-    <!-- 排序選單 -->
+    <!-- 看板與排序選單 -->
     <div class="sort-bar">
       <label>排序：</label>
       <select v-model="sortBy">
@@ -53,7 +46,7 @@
               <div class="time">{{ formatTime(post.createdAt) }}</div>
             </div>
           </div>
-          <span class="tag">{{ post.tag || '一般' }}</span>
+          <span class="tag">{{ boardLabel(post.board) }}</span>
         </div>
 
         <p class="post-content">{{ post.content }}</p>
@@ -119,9 +112,16 @@ const isPosting = ref(false)
 // 表單狀態
 const newPost = ref('')
 const selectedTag = ref('生活')
+const selectedBoard = ref('chat')
+const selectedBoardFilter = ref('all')
 const newComments = ref({})
 const sortBy = ref('latest')
 const uploadedImage = ref(null)
+// 看板輔助：顯示用標籤
+function boardLabel(key) {
+  const map = { chat: '閒聊版', work: '工作版', family: '家庭版', sports: '運動版', general: '一般' }
+  return map[key] || '一般'
+}
 
 // 檢查登入狀態
 async function checkAuthStatus() {
@@ -146,7 +146,11 @@ async function checkAuthStatus() {
 async function fetchPosts() {
   isLoading.value = true
   try {
-    const response = await fetch('/api/posts', { credentials: 'include' })
+    const params = new URLSearchParams()
+    if (selectedBoardFilter.value && selectedBoardFilter.value !== 'all') {
+      params.set('board', selectedBoardFilter.value)
+    }
+    const response = await fetch(`/api/posts${params.toString() ? `?${params.toString()}` : ''}`, { credentials: 'include' })
     if (response.ok) {
       const data = await response.json()
       // 轉換後端資料格式為前端需要的格式
@@ -157,7 +161,8 @@ async function fetchPosts() {
         showComments: false,
         bookmarked: false,
         liked: false,
-        tag: post.tag || '一般'
+        tag: post.tag || '一般',
+        board: post.board || 'general'
       }))
 
       // 為每個貼文獲取點讚狀態和留言
@@ -220,7 +225,8 @@ async function addPost() {
       body: JSON.stringify({
         content: newPost.value.trim(),
         tag: selectedTag.value,
-        imageUrl: uploadedImage.value
+        imageUrl: uploadedImage.value,
+        board: selectedBoard.value
       })
     })
 
@@ -234,13 +240,15 @@ async function addPost() {
         showComments: false,
         bookmarked: false,
         liked: false,
-        tag: selectedTag.value
+        tag: selectedTag.value,
+        board: data.post.board || selectedBoard.value
       })
 
       // 清空表單
       newPost.value = ''
       uploadedImage.value = null
       selectedTag.value = '生活'
+      selectedBoard.value = selectedBoardFilter.value === 'all' ? 'chat' : selectedBoardFilter.value
     } else {
       const error = await response.json()
       alert(error.error || '發文失敗')
