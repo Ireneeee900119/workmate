@@ -26,7 +26,7 @@ async function authRequired(req, res, next) {
 
 router.post('/', authRequired, async (req, res) => {
 	try {
-		const { content, imageUrl = null, board: rawBoard } = req.body || {}
+		const { content, imageUrl = null, board: rawBoard, tag: rawTag } = req.body || {}
 		if (!content || typeof content !== 'string' || content.trim().length === 0) {
 			return res.status(400).json({ error: '內容不可為空' })
 		}
@@ -36,12 +36,19 @@ router.post('/', authRequired, async (req, res) => {
 		const board = allowedBoards.has(String(rawBoard || '').toLowerCase())
 			? String(rawBoard).toLowerCase()
 			: 'general'
+
+		// 標籤
+		const allowedTags = new Set(['生活', '租屋', '美食', '心情', '技術'])
+		const tag = allowedTags.has(String(rawTag || ''))
+			? String(rawTag)
+			: '生活'
+
 		const [result] = await db.query(
-			'INSERT INTO posts (author_id, content, image_url, board) VALUES (?,?,?,?)',
-			[req.userId, content.trim(), imageUrl, board]
+			'INSERT INTO posts (author_id, content, image_url, board, tag) VALUES (?,?,?,?,?)',
+			[req.userId, content.trim(), imageUrl, board, tag]
 		)
 		const [rows] = await db.query(
-			`SELECT p.id, p.content, p.image_url AS imageUrl, p.board, p.created_at AS createdAt, p.updated_at AS updatedAt,
+			`SELECT p.id, p.content, p.image_url AS imageUrl, p.board, p.tag, p.created_at AS createdAt, p.updated_at AS updatedAt,
 				u.id AS authorId, u.name AS authorName, u.avatar_url AS authorAvatarUrl, u.dept AS authorDept
 				FROM posts p JOIN users u ON u.id = p.author_id WHERE p.id = ?`,
 			[result.insertId]
@@ -55,16 +62,28 @@ router.post('/', authRequired, async (req, res) => {
 
 router.get('/', async (req, res) => {
 	try {
-		const { board: rawBoard } = req.query
-		let sql = `SELECT p.id, p.content, p.image_url AS imageUrl, p.board, p.created_at AS createdAt, p.updated_at AS updatedAt,
+		const { board: rawBoard, tag: rawTag } = req.query
+		let sql = `SELECT p.id, p.content, p.image_url AS imageUrl, p.board, p.tag, p.created_at AS createdAt, p.updated_at AS updatedAt,
 			p.likes_count, p.comments_count,
 			u.id AS authorId, u.name AS authorName, u.avatar_url AS authorAvatarUrl, u.dept AS authorDept
 			FROM posts p JOIN users u ON u.id = p.author_id`
 		const params = []
+		const conditions = []
+
 		if (rawBoard && String(rawBoard).toLowerCase() !== 'all') {
-			sql += ' WHERE p.board = ?'
+			conditions.push('p.board = ?')
 			params.push(String(rawBoard).toLowerCase())
 		}
+
+		if (rawTag && String(rawTag) !== 'all') {
+			conditions.push('p.tag = ?')
+			params.push(String(rawTag))
+		}
+
+		if (conditions.length > 0) {
+			sql += ' WHERE ' + conditions.join(' AND ')
+		}
+
 		sql += ' ORDER BY p.created_at DESC'
 		const [rows] = await db.query(sql, params)
 		res.json({ posts: rows })

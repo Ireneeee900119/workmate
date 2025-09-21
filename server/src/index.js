@@ -193,6 +193,13 @@ async function initTables() {
 	} catch (err) {
 		// 欄位可能已存在，忽略錯誤
 	}
+
+	// 為 posts 表新增 tag 欄位（標籤），若不存在
+	try {
+		await db.query("ALTER TABLE posts ADD COLUMN tag VARCHAR(50) DEFAULT '生活'")
+	} catch (err) {
+		// 欄位可能已存在，忽略錯誤
+	}
 }
 
 // middlewares
