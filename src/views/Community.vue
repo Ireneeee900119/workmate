@@ -13,6 +13,13 @@
     <div v-if="isLoggedIn" class="post-box">
       <textarea v-model="newPost" placeholder="分享你的想法..." />
       <div class="actions">
+        <select v-model="selectedTag" class="tag-select">
+          <option value="生活">🏠 生活</option>
+          <option value="租屋">🏘️ 租屋</option>
+          <option value="美食">🍜 美食</option>
+          <option value="心情">💭 心情</option>
+          <option value="技術">💻 技術</option>
+        </select>
         <input type="file" @change="onImageUpload" />
         <button :disabled="!newPost.trim() || isPosting" @click="addPost">
           {{ isPosting ? '發佈中...' : '發佈' }}
@@ -22,12 +29,25 @@
 
     <!-- 看板與排序選單 -->
     <div class="sort-bar">
-      <label>排序：</label>
-      <select v-model="sortBy">
-        <option value="latest">最新</option>
-        <option value="popular">熱門</option>
-        <option value="mine" v-if="isLoggedIn">我的貼文</option>
-      </select>
+      <div class="filter-group">
+        <label>標籤：</label>
+        <select v-model="selectedTagFilter">
+          <option value="all">全部</option>
+          <option value="生活">🏠 生活</option>
+          <option value="租屋">🏘️ 租屋</option>
+          <option value="美食">🍜 美食</option>
+          <option value="心情">💭 心情</option>
+          <option value="技術">💻 技術</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>排序：</label>
+        <select v-model="sortBy">
+          <option value="latest">最新</option>
+          <option value="popular">熱門</option>
+          <option value="mine" v-if="isLoggedIn">我的貼文</option>
+        </select>
+      </div>
       <button @click="fetchPosts" class="refresh-btn">🔄 重新整理</button>
     </div>
 
@@ -46,7 +66,10 @@
               <div class="time">{{ formatTime(post.createdAt) }}</div>
             </div>
           </div>
-          <span class="tag">{{ boardLabel(post.board) }}</span>
+          <div class="tags">
+            <span class="tag board-tag">{{ boardLabel(post.board) }}</span>
+            <span class="tag content-tag">{{ getTagIcon(post.tag) }} {{ post.tag }}</span>
+          </div>
         </div>
 
         <p class="post-content">{{ post.content }}</p>
@@ -114,6 +137,7 @@ const newPost = ref('')
 const selectedTag = ref('生活')
 const selectedBoard = ref('chat')
 const selectedBoardFilter = ref('all')
+const selectedTagFilter = ref('all')
 const newComments = ref({})
 const sortBy = ref('latest')
 const uploadedImage = ref(null)
@@ -121,6 +145,18 @@ const uploadedImage = ref(null)
 function boardLabel(key) {
   const map = { chat: '閒聊版', work: '工作版', family: '家庭版', sports: '運動版', general: '一般' }
   return map[key] || '一般'
+}
+
+// 標籤圖示
+function getTagIcon(tag) {
+  const iconMap = {
+    '生活': '🏠',
+    '租屋': '🏘️',
+    '美食': '🍜',
+    '心情': '💭',
+    '技術': '💻'
+  }
+  return iconMap[tag] || '📌'
 }
 
 // 檢查登入狀態
@@ -150,6 +186,7 @@ async function fetchPosts() {
     if (selectedBoardFilter.value && selectedBoardFilter.value !== 'all') {
       params.set('board', selectedBoardFilter.value)
     }
+    // 移除tag参数，在前端进行筛选
     const response = await fetch(`/api/posts${params.toString() ? `?${params.toString()}` : ''}`, { credentials: 'include' })
     if (response.ok) {
       const data = await response.json()
@@ -161,7 +198,7 @@ async function fetchPosts() {
         showComments: false,
         bookmarked: false,
         liked: false,
-        tag: post.tag || '一般',
+        tag: post.tag || '生活',
         board: post.board || 'general'
       }))
 
@@ -240,7 +277,7 @@ async function addPost() {
         showComments: false,
         bookmarked: false,
         liked: false,
-        tag: selectedTag.value,
+        tag: data.post.tag || selectedTag.value,
         board: data.post.board || selectedBoard.value
       })
 
@@ -357,16 +394,24 @@ function formatTime(dateString) {
 }
 
 const sortedPosts = computed(() => {
+  let filteredPosts = posts.value
+
+  // 先按标签筛选
+  if (selectedTagFilter.value && selectedTagFilter.value !== 'all') {
+    filteredPosts = filteredPosts.filter(p => p.tag === selectedTagFilter.value)
+  }
+
+  // 再按排序方式处理
   if (sortBy.value === 'latest') {
-    return [...posts.value].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    return [...filteredPosts].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
   }
   if (sortBy.value === 'popular') {
-    return [...posts.value].sort((a, b) => (b.likes || 0) - (a.likes || 0))
+    return [...filteredPosts].sort((a, b) => (b.likes || 0) - (a.likes || 0))
   }
   if (sortBy.value === 'mine' && currentUser.value) {
-    return posts.value.filter(p => p.authorId === currentUser.value.id)
+    return filteredPosts.filter(p => p.authorId === currentUser.value.id)
   }
-  return posts.value
+  return filteredPosts
 })
 
 // 頁面載入時執行
@@ -423,6 +468,12 @@ onMounted(async () => {
 .post-box input[type="file"] {
   font-size: 13px;
 }
+.post-box .tag-select {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
 .post-box button {
   padding: 6px 12px;
   background: #1976d2;
@@ -439,6 +490,12 @@ onMounted(async () => {
 /* 排序 */
 .sort-bar {
   margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.filter-group {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -505,11 +562,26 @@ onMounted(async () => {
   font-size: 12px;
   color: #666;
 }
+.tags {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
 .tag {
   font-size: 12px;
-  background: #eee;
   padding: 2px 6px;
   border-radius: 4px;
+  white-space: nowrap;
+}
+.board-tag {
+  background: #e9ecef;
+  color: #495057;
+}
+.content-tag {
+  background: #e7f3ff;
+  color: #0066cc;
+  font-weight: 500;
 }
 .post-content {
   margin: 8px 0;
