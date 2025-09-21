@@ -189,13 +189,13 @@ const player = { x: START.x*TILE+16, y: START.y*TILE+16, dir: 'down', f:0, tick:
 
 /* ================= POI（照片 / 任務 / 對話） ================= */
 const poi = [
-  { id:'it',   name:'IT 設備櫃台',  x:16, y:4,  photo:'', // 可換成 /images/it_desk.jpg
+  { id:'it',   name:'IT 設備櫃台',  x:16, y:4,  photo:'./workplace.jpg',
     desc:'領取筆電、門禁卡、開通 AD/Email、設定 MFA。', talk:['歡迎入職！先領取筆電與開通帳號吧。','記得把 VPN 也測一下。'],
     next:'請前往「VPN 測試點」。 (x:12,y:6)' },
-  { id:'vpn',  name:'VPN 測試點',  x:12, y:6,  photo:'',
+  { id:'vpn',  name:'VPN 測試點',  x:12, y:6,  photo:'./vpn_test.jpg',
     desc:'測試 VPN 連線、內網可達性。', talk:['VPN 連上了嗎？試 ping 內網服務看看。'],
     next:'下一步到「開發環境區」安裝 IDE/Git。 (x:37,y:8)'},
-  { id:'dev',  name:'開發環境區',  x:37, y:8,  photo:'',
+  { id:'dev',  name:'開發環境區',  x:37, y:8,  photo:'./life_workplace_16_lg.jpg',
     desc:'安裝 IDE / Git / Node / 內部 registry；拉專案試編譯。', talk:['IDE 裝好了嗎？','先跑一個 hello build 試試。'],
     next:'去「保健中心」完成新人體檢。 (x:25,y:21)'},
      { id:'cafeteria', name:'員工餐廳', x:11, y:28, photo:'./cafeteria.jpg',
@@ -203,10 +203,10 @@ const poi = [
   talk:['今天的餐點很豐富喔！','午餐高峰時段記得避開人潮。'],
   next:'接下來請前往「保健中心」完成新人體檢。 (x:25,y:21)'
     },
-  { id:'clinic',name:'保健中心',   x:25, y:21, photo:'',
+  { id:'clinic',name:'保健中心',   x:25, y:21, photo:'./wellness.jpg',
     desc:'健康檢查、緊急協助、心理諮商資源。', talk:['量血壓與視力在這邊。','身體不適可隨時來。'],
     next:'最後去「HR 辦公室」繳交文件。 (x:48,y:25)'},
-  { id:'hr',   name:'HR 辦公室',   x:48, y:25, photo:'./hr.jpg',
+  { id:'hr',   name:'HR 辦公室',   x:48, y:25, photo:'./HR.jpg',
     desc:'報到文件與福利說明、權限補件。', talk:['歡迎加入！','記得完成線上新人導向課程。'],
     next:'🎉 Day-1 完成，恭喜！'}
 ];
